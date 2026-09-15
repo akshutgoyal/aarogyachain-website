@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { ChainProvider } from "./chain";
 import Nav from "./Nav";
 import { Msg } from "./components";
@@ -11,7 +11,7 @@ import Verify from "./pages/Verify";
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <ChainProvider>
         <Nav />
         <div className="global-msg"><Msg /></div>
@@ -29,6 +29,6 @@ export default function App() {
           <span><i>Mongo answers quickly — the chain answers truthfully.</i></span>
         </footer>
       </ChainProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useEffect } from "react";
 import { useChain } from "./chain";
 import { ROLES } from "./contract";
@@ -23,13 +23,15 @@ function CopyAddr({ value }) {
 
 export default function Nav() {
   const { account, role, saveRole, connect } = useChain();
-  const { pathname } = useLocation();
 
-  // The nav demos whichever page you are on — the badge just reflects it.
+  // The badge demos whichever page you are on — read the real path from the hash.
+  const path = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+  const seg = path.split("/")[1];
   useEffect(() => {
-    const seg = pathname.split("/")[1];
     if (seg && ROLES[seg] && seg !== role) saveRole(seg);
-  }, [pathname, role, saveRole]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seg]);
+  const shown = seg && ROLES[seg] ? seg : role;
   return (
     <nav className="nav">
       <Link to="/" style={{ textDecoration: "none", color: "inherit" }} className="brand">
@@ -44,8 +46,8 @@ export default function Nav() {
         <NavLink to="/verify" className={({ isActive }) => (isActive ? "active" : "")}>Verify</NavLink>
       </div>
       <div className="nav-right">
-        {role !== "verify" && (
-          <span className="demo-as">Currently <span className={`role-badge ${role}`}>{ROLES[role].label}</span></span>
+        {shown !== "verify" && (
+          <span className="demo-as">Currently <span className={`role-badge ${shown}`}>{ROLES[shown].label}</span></span>
         )}
         {account ? (
           <CopyAddr value={account} />
