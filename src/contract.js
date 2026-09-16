@@ -32,6 +32,21 @@ export const ABI = [
   "event AccessRevoked(uint256 indexed tokenId, address indexed viewer)",
   "event EmergencyAccessUsed(uint256 indexed tokenId, address indexed viewer, string reason, uint64 expiresAt)",
   "event RecordRevoked(uint256 indexed tokenId, address indexed admin)",
+
+  // Custom errors. Without these ethers cannot decode a revert and all you get
+  // is "execution reverted (unknown custom error)".
+  "error NotAuthorized()",
+  "error AccessDenied()",
+  "error Expired()",
+  "error RecordNotFound()",
+  "error IdentityExists()",
+  "error IdentityNotFound()",
+  "error AccessControlUnauthorizedAccount(address account, bytes32 neededRole)",
+  "error AccessControlBadConfirmation()",
+  "error ERC721NonexistentToken(uint256 tokenId)",
+  "error ERC721InsufficientApproval(address operator, uint256 tokenId)",
+  "error ERC721InvalidReceiver(address receiver)",
+  "error ReentrancyGuardReentrantCall()",
 ];
 
 export const ROLES = {

@@ -255,15 +255,19 @@ export function ChainProvider({ children }) {
 }
 
 export function shortErr(e) {
-  const m = e?.shortMessage || e?.reason || e?.message || String(e);
+  // ethers fills in e.revert when the ABI declares the custom error.
+  const name = e?.revert?.name || e?.info?.error?.name || "";
+  const m = (name ? name + " — " : "") + (e?.shortMessage || e?.reason || e?.message || String(e));
   if (/user rejected/i.test(m)) return "transaction rejected in wallet.";
+  if (/AccessControlUnauthorizedAccount/.test(m))
+    return "this wallet does not hold the required role — switch MetaMask to the account that does.";
   if (/AccessDenied/.test(m)) return "no consent on record (AccessDenied).";
   if (/Expired/.test(m)) return "consent window expired (Expired).";
-  if (/NotAuthorized/.test(m)) return "not authorized — wrong role or not the owner.";
+  if (/NotAuthorized/.test(m)) return "not authorized — wrong role, or not the record owner.";
   if (/RecordNotFound/.test(m)) return "record does not exist (RecordNotFound).";
   if (/IdentityExists/.test(m)) return "identity already registered.";
-  if (/IdentityNotFound/.test(m)) return "patient has no active identity.";
-  if (/AccessControlUnauthorizedAccount/.test(m)) return "your wallet lacks the required role.";
+  if (/IdentityNotFound/.test(m)) return "that patient has no active identity.";
+  if (/ERC721NonexistentToken/.test(m)) return "that token does not exist (wrong ID, or already revoked).";
   return m.split("\n")[0].slice(0, 160);
 }
 
