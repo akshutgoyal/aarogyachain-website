@@ -34,7 +34,9 @@ export default function Doctor() {
     if (!c) return;
     setCid(null);
     const allowed = await read("canAccess", () => c.canAccess(id, account));
-    const v = await read("viewRecord", () => c.viewRecord(id));
+    // State the caller explicitly: the contract gate is on msg.sender, and
+    // MetaMask would otherwise substitute its own selected account.
+    const v = await read("viewRecord", () => c.viewRecord(id, { from: account }));
     if (v !== null) {
       setCid(v);
       say("ok", allowed ? "File location released — your consent window is open." : "You are the record's owner, so the read is allowed without consent.");

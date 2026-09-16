@@ -3,17 +3,20 @@ import { useChain } from "../chain";
 import { SetupCard, RoleGateNotice, Msg, TokenHint, Copyable } from "../components";
 
 export default function Auditor() {
-  const { getContract, read, say, busy } = useChain();
+  const { account, getContract, read, say, busy } = useChain();
   const [tokenId, setTokenId] = useState("1");
   const [result, setResult] = useState(null);
 
   async function audit() {
     const id = Number(tokenId);
     if (!Number.isInteger(id) || id < 1) return say("err", "Enter a valid token ID.");
+    if (!account) return say("err", "Connect the Auditor wallet first — the contract checks who is asking.");
     const c = await getContract(false).catch((e) => { say("err", e.message); return null; });
     if (!c) return;
     setResult(null);
-    const r = await read("auditRecord", () => c.auditRecord(id));
+    // State the caller explicitly: without it MetaMask substitutes whichever
+    // account it has selected, which may not be the one shown on this page.
+    const r = await read("auditRecord", () => c.auditRecord(id, { from: account }));
     if (r === null) return;
     setResult({ hash: r[0], type: r[1], mintedAt: new Date(Number(r[2]) * 1000).toLocaleString(), owner: r[3] });
     say("ok", "Metadata retrieved. Notice what is missing: the file location is never released to an auditor.");

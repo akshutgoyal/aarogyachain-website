@@ -57,7 +57,8 @@ export default function Patient() {
           if (owner.toLowerCase() === account.toLowerCase()) {
             let isLocked = null;
             try { isLocked = await c.locked(id); } catch { /* pre-5192 */ }
-            found.push({ id, cid: await c.viewRecord(id), locked: isLocked });
+            // Read as this wallet explicitly, so the contract sees the owner.
+            found.push({ id, cid: await c.viewRecord(id, { from: account }), locked: isLocked });
           }
         } catch { /* burned or not ours */ }
       }
