@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
-import { useChain, normAddr } from "./chain";
+import { useEffect, useRef, useState } from "react";
+import { useChain, normAddr, PAGE_ROLE, ROLE_LABEL, short } from "./chain";
+
+// Still re-exported from here — the page components import it by this path.
+export { short };
 
 export function Msg() {
   const { msg } = useChain();
   if (!msg) return null;
   return <div className={`status ${msg.kind}`}>{msg.text}</div>;
-}
-
-export function short(a) {
-  return a ? a.slice(0, 6) + "…" + a.slice(-4) : "";
 }
 
 export function Copyable({ value, label }) {
@@ -28,23 +27,47 @@ export function Copyable({ value, label }) {
   );
 }
 
-const PAGE_ROLE = { admin: "admin", doctor: "doctor", auditor: "auditor", patient: "patient" };
-
 export function RoleGateNotice() {
   return null;
 }
 
+/**
+ * Shows the readiness of this page and, when the connected wallet is not the one
+ * this page needs, asks MetaMask to switch to it.
+ */
 export function SetupCard({ page }) {
-  const { account, contractAddress, saveAddress, connect, role } = useChain();
-  const [open, setOpen] = useState(!(contractAddress && account));
-  const needed = PAGE_ROLE[page];
-  const roleOk = !needed || role === needed;
+  const { account, accounts, contractAddress, saveAddress, connect, roleMap, accountFor, switchTo, say } = useChain();
+  const [open, setOpen] = useState(false);
+  const triedRef = useRef(null);
+
+  const want = PAGE_ROLE[page];
+  const target = accountFor(page);
+  const myRole = account ? roleMap[account.toLowerCase()] : null;
+  const roleOk = !want || myRole === want;
+  const walletReady = !!account && roleOk;
+
+  // Ask MetaMask to switch, once per page + target, whenever it would help.
+  useEffect(() => {
+    if (!want || !account || roleOk || !target) return;
+    const key = page + ":" + target.toLowerCase();
+    if (triedRef.current === key) return;
+    triedRef.current = key;
+    say("info", `This page needs the ${ROLE_LABEL[want]} wallet (${short(target)}) — asking MetaMask to switch…`);
+    switchTo(target);
+  }, [want, account, roleOk, target, page, switchTo, say]);
 
   const checks = [
     { ok: !!contractAddress, text: "Contract address set" },
-    { ok: !!account, text: account ? "Wallet connected — " + short(account) : "Wallet connected" },
+    { ok: !!account, text: account ? `Wallet connected — ${short(account)}` : "Wallet connected" },
     { ok: !!account, text: "On Sepolia testnet", soft: !account },
-    { ok: roleOk, text: roleOk ? "Demo role matches this page" : `Demo role is "${role}", this page needs "${needed}"` },
+    {
+      ok: roleOk,
+      text: !want
+        ? "Any wallet works on this page"
+        : roleOk
+          ? `${ROLE_LABEL[want]} wallet in use`
+          : `Connected wallet is ${myRole ? ROLE_LABEL[myRole] : "not registered"}; this page needs the ${ROLE_LABEL[want]}`,
+    },
   ];
   const allOk = checks.every((c) => c.ok);
 
@@ -54,10 +77,13 @@ export function SetupCard({ page }) {
         <span className={`dot ${allOk ? "ok" : "wait"}`} />
         <b>{allOk ? "Ready" : "Setup needed"}</b>
         <span className="sub" style={{ margin: 0 }}>
-          {contractAddress ? "contract set" : "no contract"} · {account ? short(account) : "wallet disconnected"} · demoing as {role}
+          {contractAddress ? "contract set" : "no contract"} ·{" "}
+          {account ? short(account) : "wallet disconnected"}
+          {want ? ` · this page needs the ${ROLE_LABEL[want]} wallet` : ""}
         </span>
         <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--muted)" }}>{open ? "hide ▲" : "show ▼"}</span>
       </div>
+
       {open && (
         <>
           <ul className="checks">
@@ -80,9 +106,36 @@ export function SetupCard({ page }) {
             </div>
           </div>
           {!contractAddress && (
-            <div className="status info">Deploy via Remix first (see contract/README.md), then paste the address here. It is remembered on this device.</div>
+            <div className="status info">Paste the deployed contract address above. It is remembered on this device.</div>
           )}
         </>
+      )}
+
+      {/* The one wallet this page wants, with a switch offer. */}
+      {want && account && !roleOk && (
+        <div className="status info" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {target ? (
+            <>
+              <span>
+                This page runs as the <b>{ROLE_LABEL[want]}</b> — that is <span className="mono">{short(target)}</span>.
+              </span>
+              <button className="btn" onClick={() => switchTo(target)}>Switch to {ROLE_LABEL[want]}</button>
+            </>
+          ) : (
+            <span>
+              No connected wallet holds the <b>{ROLE_LABEL[want]}</b> role yet.
+              {page === "admin"
+                ? " Deploy from the admin wallet, or connect it in MetaMask."
+                : " Grant it on the Admin page first, then come back."}
+            </span>
+          )}
+        </div>
+      )}
+
+      {want && !account && accounts.length > 0 && (
+        <div className="status info">
+          {accounts.length} wallet{accounts.length > 1 ? "s" : ""} already authorised — open the Wallet field above and connect.
+        </div>
       )}
     </div>
   );

@@ -1,11 +1,5 @@
 import { Link, NavLink } from "react-router-dom";
-import { useEffect } from "react";
-import { useChain } from "./chain";
-import { ROLES } from "./contract";
-
-function short(a) {
-  return a ? a.slice(0, 6) + "…" + a.slice(-4) : "";
-}
+import { useChain, short, ROLE_LABEL } from "./chain";
 
 function CopyAddr({ value }) {
   async function copy() {
@@ -22,16 +16,11 @@ function CopyAddr({ value }) {
 }
 
 export default function Nav() {
-  const { account, role, saveRole, connect } = useChain();
+  const { account, roleMap, connect } = useChain();
 
-  // The badge demos whichever page you are on — read the real path from the hash.
-  const path = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
-  const seg = path.split("/")[1];
-  useEffect(() => {
-    if (seg && ROLES[seg] && seg !== role) saveRole(seg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seg]);
-  const shown = seg && ROLES[seg] ? seg : role;
+  // The badge reflects what this wallet actually holds on-chain, not the page you are on.
+  const detected = account ? roleMap[account.toLowerCase()] : null;
+
   return (
     <nav className="nav">
       <Link to="/" style={{ textDecoration: "none", color: "inherit" }} className="brand">
@@ -46,8 +35,13 @@ export default function Nav() {
         <NavLink to="/verify" className={({ isActive }) => (isActive ? "active" : "")}>Verify</NavLink>
       </div>
       <div className="nav-right">
-        {shown !== "verify" && (
-          <span className="demo-as">Currently <span className={`role-badge ${shown}`}>{ROLES[shown].label}</span></span>
+        {account && (
+          <span className="demo-as">
+            Connected as{" "}
+            {detected
+              ? <span className={`role-badge ${detected}`}>{ROLE_LABEL[detected]}</span>
+              : <span className="role-badge">No role</span>}
+          </span>
         )}
         {account ? (
           <CopyAddr value={account} />
