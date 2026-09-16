@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useChain, normAddr, PAGE_ROLE, ROLE_LABEL, short } from "./chain";
+import { useChain, normAddr, PAGE_ROLE, ROLE_LABEL, short, hasAddr } from "./chain";
 
 // Still re-exported from here — the page components import it by this path.
 export { short };
@@ -36,7 +36,7 @@ export function RoleGateNotice() {
  * this page needs, asks MetaMask to switch to it.
  */
 export function SetupCard({ page }) {
-  const { account, accounts, contractAddress, saveAddress, connect, roleMap, holders, accountFor, switchTo, say } = useChain();
+  const { account, accounts, permitted, contractAddress, saveAddress, connect, roleMap, holders, accountFor, switchTo, say } = useChain();
   // Open by default whenever something still needs setting up.
   const [open, setOpen] = useState(!(contractAddress && account));
   const triedRef = useRef(null);
@@ -126,7 +126,10 @@ export function SetupCard({ page }) {
           ) : target ? (
             <>
               <span>
-                This page runs as the <b>{ROLE_LABEL[want]}</b> — that is <span className="mono">{short(target)}</span>.
+                This page runs as the <b>{ROLE_LABEL[want]}</b> — <span className="mono">{short(target)}</span>.{" "}
+                {hasAddr(permitted, target)
+                  ? "MetaMask has it connected, so selecting it is enough."
+                  : "It is not connected to this site yet, so MetaMask will open for you to add it."}
               </span>
               <button className="btn" onClick={() => switchTo(target)}>Switch to {ROLE_LABEL[want]}</button>
             </>

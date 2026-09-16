@@ -28,9 +28,29 @@ export function short(a) {
   return a ? a.slice(0, 6) + "…" + a.slice(-4) : "";
 }
 
+const sameList = (a, b) =>
+  a.length === b.length && a.every((x, i) => (x || "").toLowerCase() === (b[i] || "").toLowerCase());
+
+export const hasAddr = (list, addr) =>
+  !!addr && list.some((a) => a.toLowerCase() === addr.toLowerCase());
+
+// MetaMask reports only the *selected* account through eth_accounts, but
+// wallet_getPermissions reveals every account the site is allowed to use. Without
+// this the site can never see the Doctor or Auditor wallet.
+async function readPermittedAccounts(eth) {
+  try {
+    const perms = await eth.request({ method: "wallet_getPermissions" });
+    const p = (perms || []).find((x) => x.parentCapability === "eth_accounts");
+    const caveat = (p?.caveats || []).find((c) => c.type === "restrictReturnedAccounts");
+    return Array.isArray(caveat?.value) ? caveat.value : [];
+  } catch {
+    return [];
+  }
+}
+
 export function ChainProvider({ children }) {
-  const [accounts, setAccounts] = useState([]);   // every account MetaMask allows this site
-  const [account, setAccount] = useState(null);   // the one MetaMask currently has selected
+  const [selected, setSelected] = useState([]);   // what eth_accounts reports (one account)
+  const [permitted, setPermitted] = useState([]); // every account MetaMask authorised for this site
   const [contractAddress, setContractAddress] = useState(() => localStorage.getItem(LS_ADDR) || "");
   const [roleMap, setRoleMap] = useState({});     // address -> admin | doctor | auditor | patient
   const [holders, setHolders] = useState({});     // role -> address, discovered from the chain
@@ -38,6 +58,20 @@ export function ChainProvider({ children }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const msgTimer = useRef(null);
+
+  // Every account this site may act as, with the selected one first.
+  const accounts = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const a of [...selected, ...permitted]) {
+      const k = (a || "").toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(a);
+    }
+    return out;
+  }, [selected, permitted]);
+  const account = selected[0] || null;
 
   // Flash a message, then clear it. Failures linger longer so they can be read —
   // the demo's reverts are the interesting part.
@@ -55,24 +89,25 @@ export function ChainProvider({ children }) {
     if (!eth) return;
 
     // Only touch state when something actually changed, so this cannot loop.
-    const apply = (list) => {
-      const next = list || [];
-      setAccounts((prev) =>
-        prev.length === next.length && prev.every((a, i) => a.toLowerCase() === (next[i] || "").toLowerCase())
-          ? prev
-          : next);
-      const first = next[0] || null;
-      setAccount((prev) => {
-        const a = prev ? prev.toLowerCase() : null;
-        const b = first ? first.toLowerCase() : null;
-        return a === b ? prev : first;
-      });
+    const apply = (sel, perm) => {
+      if (Array.isArray(sel)) setSelected((prev) => (sameList(prev, sel) ? prev : sel));
+      if (Array.isArray(perm)) setPermitted((prev) => (sameList(prev, perm) ? prev : perm));
     };
 
-    const sync = () => eth.request({ method: "eth_accounts" }).then(apply).catch(() => {});
+    const sync = async () => {
+      try {
+        const [sel, perm] = await Promise.all([
+          eth.request({ method: "eth_accounts" }),
+          readPermittedAccounts(eth),
+        ]);
+        apply(sel, perm);
+      } catch { /* wallet locked, or mid-switch */ }
+    };
+
+    const onAccounts = (list) => apply(list);
     const onChain = () => window.location.reload();
 
-    eth.on?.("accountsChanged", apply);
+    eth.on?.("accountsChanged", onAccounts);
     eth.on?.("chainChanged", onChain);
     sync();
 
@@ -87,7 +122,7 @@ export function ChainProvider({ children }) {
       clearInterval(id);
       window.removeEventListener("focus", sync);
       document.removeEventListener("visibilitychange", sync);
-      eth.removeListener?.("accountsChanged", apply);
+      eth.removeListener?.("accountsChanged", onAccounts);
       eth.removeListener?.("chainChanged", onChain);
     };
   }, []);
@@ -108,11 +143,14 @@ export function ChainProvider({ children }) {
           return say("err", "Please switch MetaMask to the Sepolia testnet.");
         }
       }
-      const list = await window.ethereum.request({ method: "eth_accounts" });
-      setAccounts(list || []);
-      setAccount(list?.[0] || null);
-      say("ok", list?.length > 1
-        ? `Wallet connected — ${list.length} accounts available.`
+      const [list, perm] = await Promise.all([
+        window.ethereum.request({ method: "eth_accounts" }),
+        readPermittedAccounts(window.ethereum),
+      ]);
+      setSelected((prev) => (sameList(prev, list || []) ? prev : (list || [])));
+      setPermitted((prev) => (sameList(prev, perm) ? prev : perm));
+      say("ok", perm.length > 1
+        ? `Wallet connected — ${perm.length} accounts authorised.`
         : "Wallet connected.");
     } catch (e) {
       say("err", "Wallet connection failed: " + shortErr(e));
@@ -183,16 +221,30 @@ export function ChainProvider({ children }) {
       const c = await getContract(false);
       const provider = c.runner.provider || c.runner;
       const latest = await provider.getBlockNumber();
-      const from = Math.max(0, latest - 50000); // ~a week of Sepolia blocks
       const [ADMIN, MGR, AUD] = await Promise.all([
         c.DEFAULT_ADMIN_ROLE(), c.MANAGER_ROLE(), c.AUDITOR_ROLE(),
       ]);
-      const [admins, managers, auditors, identities] = await Promise.all([
-        c.queryFilter(c.filters.RoleGranted(ADMIN), from, latest),
-        c.queryFilter(c.filters.RoleGranted(MGR), from, latest),
-        c.queryFilter(c.filters.RoleGranted(AUD), from, latest),
-        c.queryFilter(c.filters.IdentityCreated(), from, latest),
-      ]);
+      // MetaMask proxies eth_getLogs through its own RPC, which refuses wide
+      // ranges. Start modest and shrink rather than failing silently.
+      let events = null;
+      for (const span of [10000, 3000, 500]) {
+        const from = Math.max(0, latest - span);
+        try {
+          const [admins, managers, auditors, identities] = await Promise.all([
+            c.queryFilter(c.filters.RoleGranted(ADMIN), from, latest),
+            c.queryFilter(c.filters.RoleGranted(MGR), from, latest),
+            c.queryFilter(c.filters.RoleGranted(AUD), from, latest),
+            c.queryFilter(c.filters.IdentityCreated(), from, latest),
+          ]);
+          events = { admins, managers, auditors, identities };
+          break;
+        } catch { /* range rejected — try a narrower one */ }
+      }
+      if (!events) {
+        setHolders({});
+        return {};
+      }
+      const { admins, managers, auditors, identities } = events;
       const out = {};
       if (admins.length) out.admin = admins[admins.length - 1].args.account;
       if (managers.length) out.doctor = managers[managers.length - 1].args.account;
@@ -224,28 +276,38 @@ export function ChainProvider({ children }) {
     [accounts, roleMap, holders]
   );
 
-  // MetaMask will not switch silently — this opens its account picker.
+  // MetaMask will not switch silently — the best any dapp can do is open its
+  // account picker and let the user choose.
   const switchTo = useCallback(
     async (target) => {
       const eth = typeof window !== "undefined" ? window.ethereum : null;
       if (!eth) return say("err", "No wallet found.");
+      const alreadyConnected = hasAddr(permitted, target);
+      say("info", alreadyConnected
+        ? `MetaMask is opening — choose ${short(target)} from the account list.`
+        : `${short(target)} is not connected to this site. MetaMask is opening so you can add it.`);
       try {
         await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
       } catch {
-        return say("info", "Account switch was dismissed. Use the MetaMask account selector.");
+        return say("info", "Account switch was dismissed. Use MetaMask's account selector instead.");
       }
-      const list = await eth.request({ method: "eth_accounts" });
-      setAccounts(list || []);
-      setAccount(list?.[0] || null);
+      const [list, perm] = await Promise.all([
+        eth.request({ method: "eth_accounts" }),
+        readPermittedAccounts(eth),
+      ]);
+      setSelected((prev) => (sameList(prev, list || []) ? prev : (list || [])));
+      setPermitted((prev) => (sameList(prev, perm) ? prev : perm));
       if (list?.[0]?.toLowerCase() === target.toLowerCase()) {
-        say("ok", "Switched to " + short(target) + ".");
-      } else {
+        say("ok", "Now acting as " + short(target) + ".");
+      } else if (list?.[0]) {
         say("info",
-          "MetaMask still has " + short(list?.[0]) + " selected — choose " + short(target) +
-          " from the account list to use this page.");
+          "MetaMask still has " + short(list[0]) + " selected — switch to " + short(target) +
+          " in the account selector to use this page.");
+      } else {
+        say("info", "No account selected in MetaMask.");
       }
     },
-    [say]
+    [say, permitted]
   );
 
   // Wrap a write call: busy flag, friendly messages, returns receipt or null.
@@ -287,12 +349,12 @@ export function ChainProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      account, accounts, contractAddress, roleMap, holders, busy, msg,
+      account, accounts, permitted, contractAddress, roleMap, holders, busy, msg,
       connect, getContract, write, read, say, saveAddress,
       detectRoles, discoverHolders, accountFor, switchTo,
     }),
-    [account, accounts, contractAddress, roleMap, holders, busy, msg, connect, getContract,
-     write, read, say, detectRoles, discoverHolders, accountFor, switchTo]
+    [account, accounts, permitted, contractAddress, roleMap, holders, busy, msg, connect,
+     getContract, write, read, say, detectRoles, discoverHolders, accountFor, switchTo]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
