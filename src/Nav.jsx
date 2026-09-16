@@ -16,10 +16,12 @@ function CopyAddr({ value }) {
 }
 
 export default function Nav() {
-  const { account, roleMap, connect } = useChain();
+  const { account, contractAddress, roleMap, connect } = useChain();
 
-  // The badge reflects what this wallet actually holds on-chain, not the page you are on.
-  const detected = account ? roleMap[account.toLowerCase()] : null;
+  // The badge reflects what this wallet actually holds on-chain, not the page you
+  // are on. With no contract address there is nothing to read, so say so rather
+  // than implying the wallet has no role.
+  const detected = account && contractAddress ? roleMap[account.toLowerCase()] : null;
 
   return (
     <nav className="nav">
@@ -37,10 +39,16 @@ export default function Nav() {
       <div className="nav-right">
         {account && (
           <span className="demo-as">
-            Connected as{" "}
-            {detected
-              ? <span className={`role-badge ${detected}`}>{ROLE_LABEL[detected]}</span>
-              : <span className="role-badge">No role</span>}
+            {contractAddress ? (
+              <>
+                Connected as{" "}
+                {detected
+                  ? <span className={`role-badge ${detected}`}>{ROLE_LABEL[detected]}</span>
+                  : <span className="role-badge">No role</span>}
+              </>
+            ) : (
+              <>Roles unknown — set the contract address</>
+            )}
           </span>
         )}
         {account ? (

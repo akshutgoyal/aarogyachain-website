@@ -37,7 +37,8 @@ export function RoleGateNotice() {
  */
 export function SetupCard({ page }) {
   const { account, accounts, contractAddress, saveAddress, connect, roleMap, accountFor, switchTo, say } = useChain();
-  const [open, setOpen] = useState(false);
+  // Open by default whenever something still needs setting up.
+  const [open, setOpen] = useState(!(contractAddress && account));
   const triedRef = useRef(null);
 
   const want = PAGE_ROLE[page];
@@ -64,9 +65,11 @@ export function SetupCard({ page }) {
       ok: roleOk,
       text: !want
         ? "Any wallet works on this page"
-        : roleOk
-          ? `${ROLE_LABEL[want]} wallet in use`
-          : `Connected wallet is ${myRole ? ROLE_LABEL[myRole] : "not registered"}; this page needs the ${ROLE_LABEL[want]}`,
+        : !contractAddress
+          ? "Wallet roles need the contract address below"
+          : roleOk
+            ? `${ROLE_LABEL[want]} wallet in use`
+            : `Connected wallet is ${myRole ? ROLE_LABEL[myRole] : "not registered"}; this page needs the ${ROLE_LABEL[want]}`,
     },
   ];
   const allOk = checks.every((c) => c.ok);
@@ -114,7 +117,12 @@ export function SetupCard({ page }) {
       {/* The one wallet this page wants, with a switch offer. */}
       {want && account && !roleOk && (
         <div className="status info" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          {target ? (
+          {!contractAddress ? (
+            <span>
+              Paste the deployed contract address in the panel above. Until it is set, the site
+              cannot read which wallet holds the <b>{ROLE_LABEL[want]}</b> role.
+            </span>
+          ) : target ? (
             <>
               <span>
                 This page runs as the <b>{ROLE_LABEL[want]}</b> — that is <span className="mono">{short(target)}</span>.
