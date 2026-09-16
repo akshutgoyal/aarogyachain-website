@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { keccak256, toUtf8Bytes } from "ethers";
 import { useChain } from "../chain";
 import { SetupCard, RoleGateNotice, Msg, TokenHint, Copyable, needAddr, short } from "../components";
+
+const DEMO_DIGEST = keccak256(toUtf8Bytes("encrypted-file-bytes"));
 
 export default function Doctor() {
   const { account, getContract, write, read, say, busy } = useChain();
@@ -47,6 +50,13 @@ export default function Doctor() {
     const me = await getContract(true).catch((e) => { say("err", e.message); return null; });
     if (!me) return;
     await write("emergencyAccess", () => me.emergencyAccess(id, account, emReason.trim()));
+  }
+
+  async function tryMint() {
+    if (!account) return say("err", "Connect your wallet first.");
+    const c = await getContract(true).catch((e) => { say("err", e.message); return null; });
+    if (!c) return;
+    await write("mintRecord (as Doctor)", () => c.mintRecord(account, DEMO_DIGEST, "QmBlockedAttempt", "XRAY"));
   }
 
   return (
@@ -116,6 +126,15 @@ export default function Doctor() {
           <button className="btn warn" disabled={busy} onClick={emergency}>{busy ? "Working…" : "Use emergency access"}</button>
         </div>
         <p className="btn-row-note">You will be asked to confirm — this event can never be deleted.</p>
+      </div>
+
+      <div className="panel" style={{ borderColor: "var(--danger)" }}>
+        <h2>4 · Prove the admin gate</h2>
+        <p className="sub">This button deliberately calls <span className="mono">mintRecord</span> from your Doctor wallet. The website does not block it — the contract does. Expect a revert.</p>
+        <div className="actions">
+          <button className="btn danger" disabled={busy} onClick={tryMint}>{busy ? "Working…" : "Try to mint as Doctor"}</button>
+        </div>
+        <p className="btn-row-note">A revert here is the demo working: issuing records is reserved for the administrator.</p>
       </div>
     </div>
   );

@@ -16,6 +16,47 @@ export default function Admin() {
   const [mType, setMType] = useState("MRI_SCAN");
   const [minted, setMinted] = useState(null);
   const [revokeId, setRevokeId] = useState("");
+  const [roleAddr, setRoleAddr] = useState("");
+  const [rolePick, setRolePick] = useState("MANAGER");
+  const [roleStatus, setRoleStatus] = useState(null);
+
+  async function roleHashes(c) {
+    return {
+      admin: await c.DEFAULT_ADMIN_ROLE(),
+      MANAGER: await c.MANAGER_ROLE(),
+      AUDITOR: await c.AUDITOR_ROLE(),
+    };
+  }
+
+  async function grantRoleNow() {
+    const a = needAddr(roleAddr, say, "wallet address"); if (!a) return;
+    const c = await getContract(true).catch((e) => { say("err", e.message); return null; });
+    if (!c) return;
+    const h = await roleHashes(c);
+    const rc = await write(`grantRole(${rolePick})`, () => c.grantRole(h[rolePick], a));
+    if (rc) checkRoles(a);
+  }
+
+  async function checkRoles(addr) {
+    const a = needAddr(addr ?? roleAddr, say, "wallet address"); if (!a) return;
+    const c = await getContract(false).catch((e) => { say("err", e.message); return null; });
+    if (!c) return;
+    const h = await roleHashes(c);
+    const [admin, manager, auditor] = await Promise.all([
+      c.hasRole(h.admin, a), c.hasRole(h.MANAGER, a), c.hasRole(h.AUDITOR, a),
+    ]);
+    const identity = await c.identities(a);
+    setRoleStatus({ addr: a, admin, manager, auditor, label: identity[0], active: identity[2] });
+  }
+
+  async function deactivate() {
+    const a = needAddr(roleAddr, say, "wallet address"); if (!a) return;
+    if (!window.confirm(`Retire the identity for ${a}? History is kept — only the active flag flips — so the record of who existed is never erased.`)) return;
+    const c = await getContract(true).catch((e) => { say("err", e.message); return null; });
+    if (!c) return;
+    const rc = await write("deactivateIdentity", () => c.deactivateIdentity(a));
+    if (rc) checkRoles(a);
+  }
 
   async function register() {
     const a = needAddr(idemAddr, say, "identity address"); if (!a) return;
@@ -98,7 +139,39 @@ export default function Admin() {
       </div>
 
       <div className="panel">
-        <h2>2 · Resolve a DID</h2>
+        <h2>2 · Assign roles</h2>
+        <p className="sub">The administrator grants Manager and Auditor rights. The Doctor gets <span className="mono">MANAGER_ROLE</span>, the Auditor gets <span className="mono">AUDITOR_ROLE</span> — without these, their calls revert.</p>
+        <div className="row">
+          <div className="field" style={{ flex: 2 }}>
+            <label>Wallet address</label>
+            <input placeholder="0x…" value={roleAddr} onChange={(e) => setRoleAddr(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Role</label>
+            <select value={rolePick} onChange={(e) => setRolePick(e.target.value)}>
+              <option value="MANAGER">MANAGER_ROLE</option>
+              <option value="AUDITOR">AUDITOR_ROLE</option>
+            </select>
+          </div>
+        </div>
+        <div className="actions">
+          <button className="btn" disabled={busy} onClick={grantRoleNow}>{busy ? "Working…" : `Grant ${rolePick}`}</button>
+          <button className="btn ghost" disabled={busy} onClick={() => checkRoles()}>{busy ? "Working…" : "Check roles"}</button>
+          <button className="btn danger small" disabled={busy} onClick={deactivate}>Retire identity</button>
+        </div>
+        {roleStatus && (
+          <dl className="kv">
+            <dt>Wallet</dt><dd className="mono"><Copyable value={roleStatus.addr} /></dd>
+            <dt>Identity label</dt><dd>{roleStatus.label || "—"} {roleStatus.active ? <span className="pill ok">active</span> : <span className="pill no">retired</span>}</dd>
+            <dt>DEFAULT_ADMIN_ROLE</dt><dd>{roleStatus.admin ? <span className="pill ok">yes</span> : <span className="pill no">no</span>}</dd>
+            <dt>MANAGER_ROLE</dt><dd>{roleStatus.manager ? <span className="pill ok">yes</span> : <span className="pill no">no</span>}</dd>
+            <dt>AUDITOR_ROLE</dt><dd>{roleStatus.auditor ? <span className="pill ok">yes</span> : <span className="pill no">no</span>}</dd>
+          </dl>
+        )}
+      </div>
+
+      <div className="panel">
+        <h2>3 · Resolve a DID</h2>
         <p className="sub">Free read. Shows the decentralized identifier derived from any wallet — no registry, no password database.</p>
         <div className="row">
           <div className="field" style={{ flex: 2 }}>
@@ -113,7 +186,7 @@ export default function Admin() {
       </div>
 
       <div className="panel">
-        <h2>3 · Mint a record NFT</h2>
+        <h2>4 · Mint a record NFT</h2>
         <p className="sub">Admin-only. The token is allocated to a registered patient identity and is soulbound from birth — it can never be transferred.</p>
         <div className="row">
           <div className="field" style={{ flex: 2 }}>
@@ -154,7 +227,7 @@ export default function Admin() {
       </div>
 
       <div className="panel" style={{ borderColor: "var(--danger)" }}>
-        <h2>4 · Revoke a record (lost wallet)</h2>
+        <h2>5 · Revoke a record (lost wallet)</h2>
         <p className="sub">Burns the token and clears its data. Both the burn and the reissue stay public — history is never rewritten.</p>
         <div className="row"><div className="field"><label>Token ID</label><input value={revokeId} onChange={(e) => setRevokeId(e.target.value)} /></div></div>
         <div className="actions">

@@ -16,6 +16,8 @@ export const ABI = [
   "function auditRecord(uint256 tokenId) view returns (bytes32 recordHash, string recordType, uint64 mintedAt, address owner)",
   "function locked(uint256 tokenId) view returns (bool)",
   "function ownerOf(uint256 tokenId) view returns (address)",
+  "function transferFrom(address from, address to, uint256 tokenId)",
+  "function approve(address to, uint256 tokenId)",
   "function consent(uint256, address) view returns (uint64)",
   "function nextTokenId() view returns (uint256)",
   "function nextRequestId() view returns (uint256)",

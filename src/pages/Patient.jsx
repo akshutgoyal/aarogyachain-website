@@ -55,7 +55,9 @@ export default function Patient() {
         try {
           const owner = await c.ownerOf(id);
           if (owner.toLowerCase() === account.toLowerCase()) {
-            found.push({ id, cid: await c.viewRecord(id) });
+            let isLocked = null;
+            try { isLocked = await c.locked(id); } catch { /* pre-5192 */ }
+            found.push({ id, cid: await c.viewRecord(id), locked: isLocked });
           }
         } catch { /* burned or not ours */ }
       }
@@ -64,6 +66,15 @@ export default function Patient() {
     } finally {
       setScanning(false);
     }
+  }
+
+  async function tryTransfer() {
+    const id = tid(); if (id == null) return;
+    if (!account) return say("err", "Connect your wallet first.");
+    const c = await getContract(true).catch((e) => { say("err", e.message); return null; });
+    if (!c) return;
+    const dest = viewer.trim() || "0x000000000000000000000000000000000000dEaD";
+    await write("transferFrom", () => c.transferFrom(account, dest, id));
   }
 
   return (
@@ -129,12 +140,27 @@ export default function Patient() {
         </div>
         {mine.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Token</th><th>File location (CID)</th></tr></thead>
-            <tbody>{mine.map((m) => (<tr key={m.id}><td className="mono">#{m.id}</td><td className="mono"><Copyable value={m.cid} label={m.cid} /></td></tr>))}</tbody>
+            <thead><tr><th>Token</th><th>File location (CID)</th><th>ERC-5192</th></tr></thead>
+            <tbody>{mine.map((m) => (
+              <tr key={m.id}>
+                <td className="mono">#{m.id}</td>
+                <td className="mono"><Copyable value={m.cid} label={m.cid} /></td>
+                <td>{m.locked ? <span className="pill ok">locked · soulbound</span> : <span className="pill wait">—</span>}</td>
+              </tr>
+            ))}</tbody>
           </table>
         ) : (
           <Empty>Nothing scanned yet — click "Find my records".</Empty>
         )}
+      </div>
+
+      <div className="panel" style={{ borderColor: "var(--danger)" }}>
+        <h2>Prove the record cannot move</h2>
+        <p className="sub">You own this NFT — and even you cannot transfer it. This calls <span className="mono">transferFrom</span> on your own record. The website does not block it; the contract does. Expect a revert.</p>
+        <div className="actions">
+          <button className="btn danger" disabled={busy} onClick={tryTransfer}>{busy ? "Working…" : "Try to transfer my record"}</button>
+        </div>
+        <p className="btn-row-note">A revert here is the point: a medical record should never be tradeable. The recipient used is the address in the consent panel above, or a burn address if that is empty.</p>
       </div>
     </div>
   );

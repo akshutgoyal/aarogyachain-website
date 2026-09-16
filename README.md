@@ -14,20 +14,31 @@ npm run dev     # → http://localhost:5173
 ## Wire it to your contract
 
 1. Deploy `../contract/AarogyaChain.sol` via Remix (see `../contract/README.md`).
+   This is the **only** step that needs Remix — every demo interaction happens here.
 2. Paste the deployed address into the **Contract address** box on any page
    (it is remembered in localStorage).
-3. Pick your role in the nav bar, connect the matching wallet, and go.
+3. Connect the wallet for the step you are demonstrating and go.
 
 ## Pages
 
 | Route | Who | What it calls |
 |---|---|---|
 | `/` | anyone | explainer + record lifecycle |
-| `/patient` | Patient | `grantAccess`, `revokeAccess`, `ownerOf` scan + `viewRecord` |
-| `/doctor` | Doctor (Manager) | `requestRecord`, `viewRecord`, `emergencyAccess` |
-| `/admin` | Hospital IT (Admin) | `createIdentity`, `didFor`, `mintRecord`, `revokeRecord` |
+| `/patient` | Patient | `grantAccess`, `revokeAccess`, `ownerOf` scan, `viewRecord`, `locked`, `transferFrom` (blocked) |
+| `/doctor` | Doctor (Manager) | `requestRecord`, `viewRecord`, `emergencyAccess`, `mintRecord` (blocked) |
+| `/admin` | Hospital IT (Admin) | `createIdentity`, `deactivateIdentity`, `grantRole`, `hasRole`, `identities`, `didFor`, `mintRecord`, `revokeRecord` |
 | `/auditor` | Auditor | `auditRecord` (metadata only — never the CID) |
 | `/verify` | anyone | `verifyRecord` — free, permissionless verdict |
+
+## The three enforced cut-offs, reachable by clicking
+
+| Revert | Where | What it proves |
+|---|---|---|
+| Soulbound block | Patient → "Try to transfer my record" | even the owner cannot move a record |
+| Admin gate | Doctor → "Try to mint as Doctor" | issuance is reserved for the administrator |
+| Role gate | Auditor page from a non-auditor wallet | audit access is a role, not a convention |
+
+Plus the expiry revert, by revoking consent and then viewing from the Doctor page.
 
 ## Stack (matches slide 3 of the deck)
 
