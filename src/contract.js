@@ -32,6 +32,8 @@ export const ABI = [
   "event AccessRevoked(uint256 indexed tokenId, address indexed viewer)",
   "event EmergencyAccessUsed(uint256 indexed tokenId, address indexed viewer, string reason, uint64 expiresAt)",
   "event RecordRevoked(uint256 indexed tokenId, address indexed admin)",
+  "event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)",
+  "event IdentityCreated(address indexed account, string label)",
 
   // Custom errors. Without these ethers cannot decode a revert and all you get
   // is "execution reverted (unknown custom error)".

@@ -36,7 +36,7 @@ export function RoleGateNotice() {
  * this page needs, asks MetaMask to switch to it.
  */
 export function SetupCard({ page }) {
-  const { account, accounts, contractAddress, saveAddress, connect, roleMap, accountFor, switchTo, say } = useChain();
+  const { account, accounts, contractAddress, saveAddress, connect, roleMap, holders, accountFor, switchTo, say } = useChain();
   // Open by default whenever something still needs setting up.
   const [open, setOpen] = useState(!(contractAddress && account));
   const triedRef = useRef(null);
@@ -69,7 +69,8 @@ export function SetupCard({ page }) {
           ? "Wallet roles need the contract address below"
           : roleOk
             ? `${ROLE_LABEL[want]} wallet in use`
-            : `Connected wallet is ${myRole ? ROLE_LABEL[myRole] : "not registered"}; this page needs the ${ROLE_LABEL[want]}`,
+            : `Connected wallet is ${myRole ? ROLE_LABEL[myRole] : "not registered"}; this page needs the ${ROLE_LABEL[want]}` +
+              (holders[want] ? ` — ${short(holders[want])}` : ""),
     },
   ];
   const allOk = checks.every((c) => c.ok);

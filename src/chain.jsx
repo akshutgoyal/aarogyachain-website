@@ -33,6 +33,7 @@ export function ChainProvider({ children }) {
   const [account, setAccount] = useState(null);   // the one MetaMask currently has selected
   const [contractAddress, setContractAddress] = useState(() => localStorage.getItem(LS_ADDR) || "");
   const [roleMap, setRoleMap] = useState({});     // address -> admin | doctor | auditor | patient
+  const [holders, setHolders] = useState({});     // role -> address, discovered from the chain
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -170,14 +171,57 @@ export function ChainProvider({ children }) {
 
   useEffect(() => { detectRoles(); }, [detectRoles, refreshKey]);
 
-  // The connected wallet for a given page, if we have one.
+  // MetaMask does not always expose every permitted account through eth_accounts,
+  // so learn who holds each role from the contract's own events. Without this the
+  // site cannot find the Doctor or Auditor wallet to switch to.
+  const discoverHolders = useCallback(async () => {
+    if (!isAddress(contractAddress)) {
+      setHolders({});
+      return {};
+    }
+    try {
+      const c = await getContract(false);
+      const provider = c.runner.provider || c.runner;
+      const latest = await provider.getBlockNumber();
+      const from = Math.max(0, latest - 50000); // ~a week of Sepolia blocks
+      const [ADMIN, MGR, AUD] = await Promise.all([
+        c.DEFAULT_ADMIN_ROLE(), c.MANAGER_ROLE(), c.AUDITOR_ROLE(),
+      ]);
+      const [admins, managers, auditors, identities] = await Promise.all([
+        c.queryFilter(c.filters.RoleGranted(ADMIN), from, latest),
+        c.queryFilter(c.filters.RoleGranted(MGR), from, latest),
+        c.queryFilter(c.filters.RoleGranted(AUD), from, latest),
+        c.queryFilter(c.filters.IdentityCreated(), from, latest),
+      ]);
+      const out = {};
+      if (admins.length) out.admin = admins[admins.length - 1].args.account;
+      if (managers.length) out.doctor = managers[managers.length - 1].args.account;
+      if (auditors.length) out.auditor = auditors[auditors.length - 1].args.account;
+      // The patient has no role — the label is the only on-chain clue.
+      const patient = identities
+        .map((e) => e.args)
+        .find((a) => /patient/i.test(a.label || ""));
+      if (patient) out.patient = patient.account;
+      setHolders(out);
+      return out;
+    } catch {
+      setHolders({});
+      return {};
+    }
+  }, [contractAddress, getContract]);
+
+  useEffect(() => { discoverHolders(); }, [discoverHolders, refreshKey]);
+
+  // The connected wallet for a given page, if we have one. Prefer an account the
+  // site can actually see; fall back to the address the chain says holds the role.
   const accountFor = useCallback(
     (page) => {
       const want = PAGE_ROLE[page];
       if (!want) return null;
-      return accounts.find((a) => roleMap[a.toLowerCase()] === want) || null;
+      const known = accounts.find((a) => roleMap[a.toLowerCase()] === want);
+      return known || holders[want] || null;
     },
-    [accounts, roleMap]
+    [accounts, roleMap, holders]
   );
 
   // MetaMask will not switch silently — this opens its account picker.
@@ -243,12 +287,12 @@ export function ChainProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      account, accounts, contractAddress, roleMap, busy, msg,
+      account, accounts, contractAddress, roleMap, holders, busy, msg,
       connect, getContract, write, read, say, saveAddress,
-      detectRoles, accountFor, switchTo,
+      detectRoles, discoverHolders, accountFor, switchTo,
     }),
-    [account, accounts, contractAddress, roleMap, busy, msg, connect, getContract,
-     write, read, say, detectRoles, accountFor, switchTo]
+    [account, accounts, contractAddress, roleMap, holders, busy, msg, connect, getContract,
+     write, read, say, detectRoles, discoverHolders, accountFor, switchTo]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
